@@ -2,16 +2,16 @@ package discovery
 
 import (
 	"fmt"
+
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/rbgs/pkg/utils"
-	"strings"
-
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
-	corev1 "k8s.io/api/core/v1"
 	workloadsv1alpha1 "sigs.k8s.io/rbgs/api/workloads/v1alpha1"
+	"sigs.k8s.io/rbgs/pkg/utils"
 )
 
 type ConfigBuilder struct {
@@ -20,38 +20,43 @@ type ConfigBuilder struct {
 }
 
 type ClusterConfig struct {
-	Group GroupInfo `json:"group"`
-	Roles RolesInfo `json:"roles"`
+	Group GroupInfo  `json:"group"`
+	Roles []RoleInfo `json:"roles"`
 }
 
 type GroupInfo struct {
-	Name  string   `json:"name"`
-	Size  int      `json:"size"`
-	Roles []string `json:"roles"`
+	Name      string   `json:"name"`
+	Namespace string   `json:"namespace"`
+	RoleNames []string `json:"roleNames"`
 }
 
-type RolesInfo map[string]RoleInstances
-
-type RoleInstances struct {
-	Size      int        `json:"size"`
-	Instances []Instance `json:"instances"`
+type RoleInfo struct {
+	Name            string `json:"name"`                      // 1. name
+	Type            string `json:"type"`                      // 2. type
+	Service         string `json:"service,omitempty"`         // 3. service (for StatefulSet and LWS)
+	ServiceTemplate string `json:"serviceTemplate,omitempty"` // 4. Service template name for LWS (if enabled)
+	Replicas        *int32 `json:"replicas"`                  // 5. Service name for StatefulSet/LWS
+	LwsWorkers      *int32 `json:"lwsWorkers,omitempty"`      // 6. Number of workers per leader in LWS
+	StartIndex      *int32 `json:"startIndex"`                // 7. Starting index for instances
 }
 
-type Instance struct {
-	Address string           `json:"address"`
-	Ports   map[string]int32 `json:"ports,omitempty"` // Key: port name, Value: port number
-}
-
-func (b *ConfigBuilder) Build() ([]byte, error) {
-	config := ClusterConfig{
+func (b *ConfigBuilder) ToClusterConfig() *ClusterConfig {
+	namespace := b.rbg.Namespace
+	if len(namespace) == 0 {
+		namespace = corev1.NamespaceDefault
+	}
+	return &ClusterConfig{
 		Group: GroupInfo{
-			Name:  b.rbg.Name,
-			Size:  len(b.rbg.Spec.Roles),
-			Roles: b.getRoleNames(),
+			Name:      b.rbg.Name,
+			Namespace: namespace,
+			RoleNames: b.getRoleNames(),
 		},
 		Roles: b.buildRolesInfo(),
 	}
-	return yaml.Marshal(config)
+}
+
+func (b *ConfigBuilder) Build() ([]byte, error) {
+	return yaml.Marshal(b.ToClusterConfig())
 }
 
 func (b *ConfigBuilder) getRoleNames() []string {
@@ -62,42 +67,53 @@ func (b *ConfigBuilder) getRoleNames() []string {
 	return names
 }
 
-func (b *ConfigBuilder) buildRolesInfo() RolesInfo {
-	roles := make(RolesInfo)
+func (b *ConfigBuilder) buildRolesInfo() []RoleInfo {
+	roles := make([]RoleInfo, 0, len(b.rbg.Spec.Roles))
 	for _, role := range b.rbg.Spec.Roles {
-		roles[role.Name] = RoleInstances{
-			Size:      int(*role.Replicas),
-			Instances: b.buildInstances(&role),
+		serviceName := b.rbg.GetWorkloadName(&role)
+		kind := role.Workload.Kind
+		if len(kind) == 0 {
+			kind = "StatefulSet"
 		}
+
+		rg := RoleInfo{
+			Name:       role.Name,
+			Type:       kind,
+			Replicas:   role.Replicas,
+			StartIndex: ptr.To[int32](0),
+		}
+
+		switch kind {
+		case "StatefulSet":
+			rg.Service = serviceName
+		case "LeaderWorkerSet":
+			// rg.ServiceTemplate = serviceName
+			rg.Service = serviceName
+			rg.LwsWorkers = role.LeaderWorkerSet.Size
+		}
+
+		roles = append(roles, rg)
 	}
 	return roles
 }
 
-func (b *ConfigBuilder) buildInstances(role *workloadsv1alpha1.RoleSpec) []Instance {
-	instances := make([]Instance, 0, *role.Replicas)
-	serviceName := b.rbg.GetWorkloadName(role)
-
-	for i := 0; i < int(*role.Replicas); i++ {
-		instance := Instance{
-			Address: fmt.Sprintf("%s-%d.%s", role.Name, i, serviceName),
-			Ports:   make(map[string]int32),
-		}
-
-		for _, port := range role.ServicePorts {
-			portName := generatePortKey(port)
-			instance.Ports[portName] = port.Port
-		}
-
-		instances = append(instances, instance)
+func semanticallyClusterConfig(old, new *ClusterConfig) (bool, string) {
+	if old == nil && new == nil {
+		return true, ""
 	}
-	return instances
-}
-
-func generatePortKey(port corev1.ServicePort) string {
-	if port.Name != "" {
-		return strings.ToLower(strings.ReplaceAll(port.Name, "-", "_"))
+	if old == nil {
+		return false, "old is nil"
 	}
-	return fmt.Sprintf("port%d", port.Port)
+	if new == nil {
+		return false, "new is nil"
+	}
+
+	opts := cmp.Options{
+		cmpopts.EquateEmpty(),
+	}
+
+	diff := cmp.Diff(old, new, opts)
+	return diff == "", diff
 }
 
 func semanticallyEqualConfigmap(old, new *corev1.ConfigMap) (bool, string) {

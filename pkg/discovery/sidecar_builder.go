@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"fmt"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,7 +34,7 @@ func (b *SidecarBuilder) Build(ctx context.Context, podSpec *v1.PodTemplateSpec)
 		return err
 	}
 
-	if curRole.EngineRuntimes == nil || len(curRole.EngineRuntimes) == 0 {
+	if len(curRole.EngineRuntimes) == 0 {
 		logger.V(1).Info("runtime is nil, skip inject sidecar")
 		return nil
 	}

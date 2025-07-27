@@ -1,9 +1,10 @@
 package discovery
 
 import (
+	"sort"
+
 	corev1 "k8s.io/api/core/v1"
 	workloadsv1alpha1 "sigs.k8s.io/rbgs/api/workloads/v1alpha1"
-	"sort"
 )
 
 type EnvBuilder struct {
@@ -43,13 +44,24 @@ func (g *EnvBuilder) buildLocalRoleVars() []corev1.EnvVar {
 		},
 	}
 
-	if g.role.Workload.Kind == "StatefulSet" || g.role.Workload.Kind == "LeaderWorkerSet" {
+	switch g.role.Workload.Kind {
+	case "StatefulSet":
 		envVars = append(envVars,
 			corev1.EnvVar{
 				Name: "ROLE_INDEX",
 				ValueFrom: &corev1.EnvVarSource{
 					FieldRef: &corev1.ObjectFieldSelector{
 						FieldPath: "metadata.labels['apps.kubernetes.io/pod-index']",
+					},
+				},
+			})
+	case "LeaderWorkerSet":
+		envVars = append(envVars,
+			corev1.EnvVar{
+				Name: "ROLE_INDEX",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.labels['leaderworkerset.sigs.k8s.io/group-index']",
 					},
 				},
 			})

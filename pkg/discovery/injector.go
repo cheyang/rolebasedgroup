@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -10,6 +11,7 @@ import (
 	coreapplyv1 "k8s.io/client-go/applyconfigurations/core/v1"
 	metaapplyv1 "k8s.io/client-go/applyconfigurations/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/yaml"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -52,47 +54,47 @@ func (i *DefaultInjector) InjectConfig(ctx context.Context, podSpec *corev1.PodT
 		configKey  = "config.yaml"
 	)
 
-	configData, err := builder.Build()
-	if err != nil {
-		return err
-	}
-	cmApplyConfig := coreapplyv1.ConfigMap(rbg.GetWorkloadName(role), rbg.Namespace).
-		WithData(map[string]string{
-			configKey: string(configData),
-		}).
-		WithOwnerReferences(metaapplyv1.OwnerReference().
-			WithAPIVersion(rbg.APIVersion).
-			WithKind(rbg.Kind).
-			WithName(rbg.Name).
-			WithUID(rbg.GetUID()).
-			WithBlockOwnerDeletion(true).
-			WithController(true),
-		)
-
-	obj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(cmApplyConfig)
-	if err != nil {
-		logger.Error(err, "Converting obj apply configuration to json.")
-		return err
-	}
-	newConfigmap := &corev1.ConfigMap{}
-	if err = runtime.DefaultUnstructuredConverter.FromUnstructured(obj, newConfigmap); err != nil {
-		return fmt.Errorf("convert ConfigmapApplyConfig to deploy error: %s", err.Error())
-	}
-
 	oldConfigmap := &corev1.ConfigMap{}
-	err = i.client.Get(ctx, types.NamespacedName{Name: rbg.GetWorkloadName(role), Namespace: rbg.Namespace}, oldConfigmap)
+	err := i.client.Get(ctx, types.NamespacedName{Name: rbg.GetWorkloadName(role), Namespace: rbg.Namespace}, oldConfigmap)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
-	equal, diff := semanticallyEqualConfigmap(oldConfigmap, newConfigmap)
-	if equal {
-		logger.V(1).Info("configmap equal, skip reconcile")
-	} else {
+
+	var oldClusterConfig *ClusterConfig
+	if data, ok := oldConfigmap.Data[configKey]; ok && data != "" {
+		oldClusterConfig = &ClusterConfig{}
+		if err = json.Unmarshal([]byte(data), oldClusterConfig); err != nil {
+			logger.Info("old config invalid, will force patch", "err", err)
+			oldClusterConfig = nil
+		}
+	}
+
+	clusterConfig := builder.ToClusterConfig()
+	equal, diff := semanticallyClusterConfig(clusterConfig, oldClusterConfig)
+	if !equal {
 		logger.V(1).Info(fmt.Sprintf("confgmap not equal, diff: %s", diff))
+		configData, err := yaml.Marshal(clusterConfig)
+		if err != nil {
+			return err
+		}
+		cmApplyConfig := coreapplyv1.ConfigMap(rbg.GetWorkloadName(role), rbg.Namespace).
+			WithData(map[string]string{
+				configKey: string(configData),
+			}).
+			WithOwnerReferences(metaapplyv1.OwnerReference().
+				WithAPIVersion(rbg.APIVersion).
+				WithKind(rbg.Kind).
+				WithName(rbg.Name).
+				WithUID(rbg.GetUID()).
+				WithBlockOwnerDeletion(true).
+				WithController(true),
+			)
 		if err := utils.PatchObjectApplyConfiguration(ctx, i.client, cmApplyConfig, utils.PatchSpec); err != nil {
 			logger.Error(err, "Failed to patch ConfigMap")
 			return err
 		}
+	} else {
+		logger.V(1).Info("configmap equal, skip reconcile")
 	}
 
 	volumeExists := false

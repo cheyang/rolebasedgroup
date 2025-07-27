@@ -293,8 +293,8 @@ func sortContainers(containers []corev1.Container) []corev1.Container {
 // It returns true if both maps are nil or empty.
 // Otherwise, it compares keys and values for equality.
 func mapsEqual(map1, map2 map[string]string) bool {
-	isMap1Empty := map1 == nil || len(map1) == 0
-	isMap2Empty := map2 == nil || len(map2) == 0
+	isMap1Empty := len(map1) == 0
+	isMap2Empty := len(map2) == 0
 
 	if isMap1Empty && isMap2Empty {
 		return true
