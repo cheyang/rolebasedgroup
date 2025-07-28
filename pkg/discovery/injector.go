@@ -54,23 +54,16 @@ func (i *DefaultInjector) InjectConfig(ctx context.Context, podSpec *corev1.PodT
 		configKey  = "config.yaml"
 	)
 
-	oldConfigmap := &corev1.ConfigMap{}
-	err := i.client.Get(ctx, types.NamespacedName{Name: rbg.GetWorkloadName(role), Namespace: rbg.Namespace}, oldConfigmap)
-	if err != nil && !apierrors.IsNotFound(err) {
+	clusterConfig := builder.ToClusterConfig()
+	equal, diff, err := i.isClusterConfigChanged(ctx,
+		types.NamespacedName{Name: rbg.GetWorkloadName(role),
+			Namespace: rbg.Namespace},
+		configKey,
+		clusterConfig)
+	if err != nil {
 		return err
 	}
 
-	var oldClusterConfig *ClusterConfig
-	if data, ok := oldConfigmap.Data[configKey]; ok && data != "" {
-		oldClusterConfig = &ClusterConfig{}
-		if err = json.Unmarshal([]byte(data), oldClusterConfig); err != nil {
-			logger.Info("old config invalid, will force patch", "err", err)
-			oldClusterConfig = nil
-		}
-	}
-
-	clusterConfig := builder.ToClusterConfig()
-	equal, diff := semanticallyClusterConfig(clusterConfig, oldClusterConfig)
 	if !equal {
 		logger.V(1).Info(fmt.Sprintf("confgmap not equal, diff: %s", diff))
 		configData, err := yaml.Marshal(clusterConfig)
@@ -175,4 +168,26 @@ func (i *DefaultInjector) InjectEnv(ctx context.Context, podSpec *corev1.PodTemp
 func (i *DefaultInjector) InjectSidecar(ctx context.Context, podSpec *corev1.PodTemplateSpec, rbg *workloadsv1alpha1.RoleBasedGroup, role *workloadsv1alpha1.RoleSpec) error {
 	builder := NewSidecarBuilder(i.client, rbg, role)
 	return builder.Build(ctx, podSpec)
+}
+
+func (i *DefaultInjector) isClusterConfigChanged(
+	ctx context.Context,
+	key client.ObjectKey,
+	configKey string,
+	clusterConfig *ClusterConfig,
+) (bool, string, error) {
+	var oldClusterConfig *ClusterConfig
+	oldConfigmap := &corev1.ConfigMap{}
+	err := i.client.Get(ctx, key, oldConfigmap)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return false, "", err
+	}
+	if data, ok := oldConfigmap.Data[configKey]; ok && data != "" {
+		oldClusterConfig = &ClusterConfig{}
+		if err = json.Unmarshal([]byte(data), oldClusterConfig); err != nil {
+			oldClusterConfig = nil
+		}
+	}
+	equal, diff := semanticallyClusterConfig(clusterConfig, oldClusterConfig)
+	return equal, diff, nil
 }
