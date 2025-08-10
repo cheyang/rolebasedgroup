@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -83,6 +84,14 @@ func (b *ConfigBuilder) buildRolesInfo() []RoleInfo {
 			StartIndex: ptr.To[int32](0),
 		}
 
+		if rg.Replicas == nil {
+			rg.Replicas = ptr.To[int32](1)
+		}
+
+		if rg.Replicas == ptr.To[int32](0) {
+			rg.StartIndex = ptr.To[int32](-1)
+		}
+
 		switch kind {
 		case "StatefulSet":
 			rg.Service = serviceName
@@ -94,6 +103,7 @@ func (b *ConfigBuilder) buildRolesInfo() []RoleInfo {
 
 		roles = append(roles, rg)
 	}
+	sort.SliceStable(roles, func(i, j int) bool { return roles[i].Name < roles[j].Name })
 	return roles
 }
 

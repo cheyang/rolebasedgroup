@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	workloadsv1alpha "sigs.k8s.io/rbgs/api/workloads/v1alpha1"
 )
@@ -378,6 +379,47 @@ func TestInjectSidecar(t *testing.T) {
 				t.Errorf("Build expect err, want %v, got %v", tt.want, tt.podSpec)
 			}
 
+		})
+	}
+}
+
+func TestDefaultInjector_isClusterConfigChanged(t *testing.T) {
+	type fields struct {
+		scheme *runtime.Scheme
+		client client.Client
+	}
+	type args struct {
+		ctx           context.Context
+		key           client.ObjectKey
+		clusterConfig *ClusterConfig
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    bool
+		want1   string
+		wantErr bool
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			i := &DefaultInjector{
+				scheme: tt.fields.scheme,
+				client: tt.fields.client,
+			}
+			got, got1, err := i.isClusterConfigChanged(tt.args.ctx, tt.args.key, tt.args.clusterConfig)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("DefaultInjector.isClusterConfigChanged() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("DefaultInjector.isClusterConfigChanged() got = %v, want %v", got, tt.want)
+			}
+			if got1 != tt.want1 {
+				t.Errorf("DefaultInjector.isClusterConfigChanged() got1 = %v, want %v", got1, tt.want1)
+			}
 		})
 	}
 }

@@ -2,7 +2,6 @@ package discovery
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -18,6 +17,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	workloadsv1alpha1 "sigs.k8s.io/rbgs/api/workloads/v1alpha1"
 	"sigs.k8s.io/rbgs/pkg/utils"
+)
+
+const (
+	volumeName = "rbg-cluster-config"
+	mountPath  = "/etc/rbg"
+	configKey  = "config.yaml"
 )
 
 type GroupInfoInjector interface {
@@ -48,17 +53,10 @@ func (i *DefaultInjector) InjectConfig(ctx context.Context, podSpec *corev1.PodT
 		role: role,
 	}
 
-	const (
-		volumeName = "rbg-cluster-config"
-		mountPath  = "/etc/rbg"
-		configKey  = "config.yaml"
-	)
-
 	clusterConfig := builder.ToClusterConfig()
 	equal, diff, err := i.isClusterConfigChanged(ctx,
 		types.NamespacedName{Name: rbg.GetWorkloadName(role),
 			Namespace: rbg.Namespace},
-		configKey,
 		clusterConfig)
 	if err != nil {
 		return err
@@ -173,7 +171,6 @@ func (i *DefaultInjector) InjectSidecar(ctx context.Context, podSpec *corev1.Pod
 func (i *DefaultInjector) isClusterConfigChanged(
 	ctx context.Context,
 	key client.ObjectKey,
-	configKey string,
 	clusterConfig *ClusterConfig,
 ) (bool, string, error) {
 	var oldClusterConfig *ClusterConfig
@@ -184,7 +181,7 @@ func (i *DefaultInjector) isClusterConfigChanged(
 	}
 	if data, ok := oldConfigmap.Data[configKey]; ok && data != "" {
 		oldClusterConfig = &ClusterConfig{}
-		if err = json.Unmarshal([]byte(data), oldClusterConfig); err != nil {
+		if err = yaml.Unmarshal([]byte(data), oldClusterConfig); err != nil {
 			oldClusterConfig = nil
 		}
 	}
