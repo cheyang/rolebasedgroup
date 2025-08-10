@@ -44,69 +44,80 @@ func NewDefaultInjector(scheme *runtime.Scheme, client client.Client) *DefaultIn
 	}
 }
 
-func (i *DefaultInjector) InjectConfig(ctx context.Context, podSpec *corev1.PodTemplateSpec, rbg *workloadsv1alpha1.RoleBasedGroup, role *workloadsv1alpha1.RoleSpec) error {
+func (i *DefaultInjector) shouldUpdateConfigMap(
+	ctx context.Context,
+	rbg *workloadsv1alpha1.RoleBasedGroup,
+	role *workloadsv1alpha1.RoleSpec,
+	clusterConfig *ClusterConfig,
+) (needUpdate bool, err error) {
 	logger := log.FromContext(ctx)
 
-	builder := &ConfigBuilder{
-		rbg:  rbg,
-		role: role,
+	cmName := rbg.GetWorkloadName(role)
+	currentCM := &corev1.ConfigMap{}
+	if err = i.client.Get(ctx, types.NamespacedName{Name: cmName, Namespace: rbg.Namespace}, currentCM); err != nil {
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, err
 	}
 
-	shouldUpdate := false
 	var oldClusterConfig *ClusterConfig
-	oldConfigmap := &corev1.ConfigMap{}
-	err := i.client.Get(ctx, types.NamespacedName{Name: rbg.GetWorkloadName(role),
-		Namespace: rbg.Namespace}, oldConfigmap)
+	if data := currentCM.Data[configKey]; data != "" {
+		oldClusterConfig = &ClusterConfig{}
+		if err = yaml.Unmarshal([]byte(data), oldClusterConfig); err != nil {
+			oldClusterConfig = nil // 反序列化失败算空
+		}
+	}
+
+	equal, err := i.hasClusterConfigChanged(ctx, oldClusterConfig, clusterConfig)
 	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return err
-		} else {
-			shouldUpdate = true
-		}
+		return false, err
 	}
-
-	clusterConfig := builder.ToClusterConfig()
-	if !shouldUpdate {
-		if data, ok := oldConfigmap.Data[configKey]; ok && data != "" {
-			oldClusterConfig = &ClusterConfig{}
-			if err = yaml.Unmarshal([]byte(data), oldClusterConfig); err != nil {
-				oldClusterConfig = nil
-			}
-		}
-		equal, err := i.hasClusterConfigChanged(ctx,
-			oldClusterConfig,
-			clusterConfig)
-		if err != nil {
-			return err
-		}
-		if !equal {
-			shouldUpdate = true
-		}
-	}
-
-	if shouldUpdate {
-		configData, err := yaml.Marshal(clusterConfig)
-		if err != nil {
-			return err
-		}
-		cmApplyConfig := coreapplyv1.ConfigMap(rbg.GetWorkloadName(role), rbg.Namespace).
-			WithData(map[string]string{
-				configKey: string(configData),
-			}).
-			WithOwnerReferences(metaapplyv1.OwnerReference().
-				WithAPIVersion(rbg.APIVersion).
-				WithKind(rbg.Kind).
-				WithName(rbg.Name).
-				WithUID(rbg.GetUID()).
-				WithBlockOwnerDeletion(true).
-				WithController(true),
-			)
-		if err := utils.PatchObjectApplyConfiguration(ctx, i.client, cmApplyConfig, utils.PatchSpec); err != nil {
-			logger.Error(err, "Failed to patch ConfigMap")
-			return err
-		}
-	} else {
+	if equal {
 		logger.V(1).Info("configmap equal, skip reconcile")
+		return false, nil
+	}
+	return true, nil
+}
+
+func (i *DefaultInjector) applyConfigMap(
+	ctx context.Context,
+	rbg *workloadsv1alpha1.RoleBasedGroup,
+	role *workloadsv1alpha1.RoleSpec,
+	clusterConfig *ClusterConfig,
+) error {
+	configData, err := yaml.Marshal(clusterConfig)
+	if err != nil {
+		return err
+	}
+
+	cmApplyConfig := coreapplyv1.ConfigMap(rbg.GetWorkloadName(role), rbg.Namespace).
+		WithData(map[string]string{
+			configKey: string(configData),
+		}).
+		WithOwnerReferences(metaapplyv1.OwnerReference().
+			WithAPIVersion(rbg.APIVersion).
+			WithKind(rbg.Kind).
+			WithName(rbg.Name).
+			WithUID(rbg.GetUID()).
+			WithBlockOwnerDeletion(true).
+			WithController(true),
+		)
+	return utils.PatchObjectApplyConfiguration(ctx, i.client, cmApplyConfig, utils.PatchSpec)
+}
+
+func (i *DefaultInjector) InjectConfig(ctx context.Context, podSpec *corev1.PodTemplateSpec, rbg *workloadsv1alpha1.RoleBasedGroup, role *workloadsv1alpha1.RoleSpec) error {
+	builder := &ConfigBuilder{rbg: rbg, role: role}
+	clusterConfig := builder.ToClusterConfig()
+
+	needUpdate, err := i.shouldUpdateConfigMap(ctx, rbg, role, clusterConfig)
+	if err != nil {
+		return err
+	}
+	if needUpdate {
+		if err := i.applyConfigMap(ctx, rbg, role, clusterConfig); err != nil {
+			return err
+		}
 	}
 
 	volumeExists := false
