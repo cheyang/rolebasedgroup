@@ -2,7 +2,6 @@ package discovery
 
 import (
 	"context"
-	"fmt"
 	"sort"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -53,17 +52,39 @@ func (i *DefaultInjector) InjectConfig(ctx context.Context, podSpec *corev1.PodT
 		role: role,
 	}
 
-	clusterConfig := builder.ToClusterConfig()
-	equal, diff, err := i.isClusterConfigChanged(ctx,
-		types.NamespacedName{Name: rbg.GetWorkloadName(role),
-			Namespace: rbg.Namespace},
-		clusterConfig)
+	shouldUpdate := false
+	var oldClusterConfig *ClusterConfig
+	oldConfigmap := &corev1.ConfigMap{}
+	err := i.client.Get(ctx, types.NamespacedName{Name: rbg.GetWorkloadName(role),
+		Namespace: rbg.Namespace}, oldConfigmap)
 	if err != nil {
-		return err
+		if !apierrors.IsNotFound(err) {
+			return err
+		} else {
+			shouldUpdate = true
+		}
 	}
 
-	if !equal {
-		logger.V(1).Info(fmt.Sprintf("confgmap not equal, diff: %s", diff))
+	clusterConfig := builder.ToClusterConfig()
+	if !shouldUpdate {
+		if data, ok := oldConfigmap.Data[configKey]; ok && data != "" {
+			oldClusterConfig = &ClusterConfig{}
+			if err = yaml.Unmarshal([]byte(data), oldClusterConfig); err != nil {
+				oldClusterConfig = nil
+			}
+		}
+		equal, err := i.isClusterConfigChanged(ctx,
+			oldClusterConfig,
+			clusterConfig)
+		if err != nil {
+			return err
+		}
+		if !equal {
+			shouldUpdate = true
+		}
+	}
+
+	if shouldUpdate {
 		configData, err := yaml.Marshal(clusterConfig)
 		if err != nil {
 			return err
@@ -170,26 +191,13 @@ func (i *DefaultInjector) InjectSidecar(ctx context.Context, podSpec *corev1.Pod
 
 func (i *DefaultInjector) isClusterConfigChanged(
 	ctx context.Context,
-	key client.ObjectKey,
+	oldClusterConfig *ClusterConfig,
 	clusterConfig *ClusterConfig,
-) (bool, string, error) {
-	var oldClusterConfig *ClusterConfig
-	oldConfigmap := &corev1.ConfigMap{}
-	err := i.client.Get(ctx, key, oldConfigmap)
-	if err != nil && !apierrors.IsNotFound(err) {
-		return false, "", err
-	}
-	if data, ok := oldConfigmap.Data[configKey]; ok && data != "" {
-		oldClusterConfig = &ClusterConfig{}
-		if err = yaml.Unmarshal([]byte(data), oldClusterConfig); err != nil {
-			oldClusterConfig = nil
-		}
-	}
-
-	if oldClusterConfig.ConfigVersion != clusterConfig.ConfigVersion {
-		return true, "Skip different version", nil
-	}
-
+) (bool, error) {
+	logger := log.FromContext(ctx)
 	equal, diff := semanticallyClusterConfig(clusterConfig, oldClusterConfig)
-	return equal, diff, nil
+	if !equal {
+		logger.Info("ClusterConfig changed", "diff", diff)
+	}
+	return equal, nil
 }
