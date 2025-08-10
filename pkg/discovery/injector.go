@@ -185,6 +185,11 @@ func (i *DefaultInjector) isClusterConfigChanged(
 			oldClusterConfig = nil
 		}
 	}
+
+	if oldClusterConfig.ConfigVersion != clusterConfig.ConfigVersion {
+		return true, "Skip different version", nil
+	}
+
 	equal, diff := semanticallyClusterConfig(clusterConfig, oldClusterConfig)
 	return equal, diff, nil
 }

@@ -20,9 +20,12 @@ type ConfigBuilder struct {
 	role *workloadsv1alpha1.RoleSpec
 }
 
+const currentConfigVersion = "v1"
+
 type ClusterConfig struct {
-	Group GroupInfo  `json:"group"`
-	Roles []RoleInfo `json:"roles"`
+	Group         GroupInfo  `json:"group"`
+	ConfigVersion string     `json:"configVersion,omitempty"`
+	Roles         []RoleInfo `json:"roles"`
 }
 
 type GroupInfo struct {
@@ -52,7 +55,8 @@ func (b *ConfigBuilder) ToClusterConfig() *ClusterConfig {
 			Namespace: namespace,
 			RoleNames: b.getRoleNames(),
 		},
-		Roles: b.buildRolesInfo(),
+		ConfigVersion: currentConfigVersion,
+		Roles:         b.buildRolesInfo(),
 	}
 }
 
