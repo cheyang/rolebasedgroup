@@ -1,18 +1,15 @@
 package discovery
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
 	workloadsv1alpha1 "sigs.k8s.io/rbgs/api/workloads/v1alpha1"
-	"sigs.k8s.io/rbgs/pkg/utils"
 )
 
 type ConfigBuilder struct {
@@ -129,41 +126,5 @@ func clusterConfigSemanticallyEqual(old, new *ClusterConfig) (bool, string) {
 	}
 
 	diff := cmp.Diff(old, new, opts)
-	return diff == "", diff
-}
-
-func semanticallyEqualConfigmap(old, new *corev1.ConfigMap) (bool, string) {
-	if old == nil && new == nil {
-		return true, ""
-	}
-	if old == nil || new == nil {
-		return false, fmt.Sprintf("nil mismatch: old=%v, new=%v", old, new)
-	}
-	// Defensive copy to prevent side effects
-	oldCopy := old.DeepCopy()
-	newCopy := new.DeepCopy()
-
-	oldCopy.Annotations = utils.FilterSystemAnnotations(oldCopy.Annotations)
-	newCopy.Annotations = utils.FilterSystemAnnotations(newCopy.Annotations)
-
-	objectMetaIgnoreOpts := cmpopts.IgnoreFields(
-		metav1.ObjectMeta{},
-		"ResourceVersion",
-		"UID",
-		"CreationTimestamp",
-		"Generation",
-		"ManagedFields",
-		"SelfLink",
-	)
-
-	opts := cmp.Options{
-		objectMetaIgnoreOpts,
-		cmpopts.SortSlices(func(a, b metav1.OwnerReference) bool {
-			return a.UID < b.UID // Make OwnerReferences comparison order-insensitive
-		}),
-		cmpopts.EquateEmpty(),
-	}
-
-	diff := cmp.Diff(oldCopy, newCopy, opts)
 	return diff == "", diff
 }
