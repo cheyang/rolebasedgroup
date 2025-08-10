@@ -81,19 +81,21 @@ func (b *ConfigBuilder) buildRolesInfo() []RoleInfo {
 			kind = "StatefulSet"
 		}
 
+		replicas := role.Replicas
+		if replicas == nil {
+			replicas = ptr.To[int32](1)
+		}
+
+		startIndex := int32(0)
+		if *replicas == 0 {
+			startIndex = -1
+		}
+
 		rg := RoleInfo{
 			Name:       role.Name,
 			Type:       kind,
-			Replicas:   role.Replicas,
-			StartIndex: ptr.To[int32](0),
-		}
-
-		if rg.Replicas == nil {
-			rg.Replicas = ptr.To[int32](1)
-		}
-
-		if rg.Replicas == ptr.To[int32](0) {
-			rg.StartIndex = ptr.To[int32](-1)
+			Replicas:   replicas,
+			StartIndex: &startIndex,
 		}
 
 		switch kind {
@@ -111,7 +113,7 @@ func (b *ConfigBuilder) buildRolesInfo() []RoleInfo {
 	return roles
 }
 
-func semanticallyClusterConfig(old, new *ClusterConfig) (bool, string) {
+func clusterConfigSemanticallyEqual(old, new *ClusterConfig) (bool, string) {
 	if old == nil && new == nil {
 		return true, ""
 	}

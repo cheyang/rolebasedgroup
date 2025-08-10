@@ -73,7 +73,7 @@ func (i *DefaultInjector) InjectConfig(ctx context.Context, podSpec *corev1.PodT
 				oldClusterConfig = nil
 			}
 		}
-		equal, err := i.isClusterConfigChanged(ctx,
+		equal, err := i.hasClusterConfigChanged(ctx,
 			oldClusterConfig,
 			clusterConfig)
 		if err != nil {
@@ -189,13 +189,13 @@ func (i *DefaultInjector) InjectSidecar(ctx context.Context, podSpec *corev1.Pod
 	return builder.Build(ctx, podSpec)
 }
 
-func (i *DefaultInjector) isClusterConfigChanged(
+func (i *DefaultInjector) hasClusterConfigChanged(
 	ctx context.Context,
 	oldClusterConfig *ClusterConfig,
 	clusterConfig *ClusterConfig,
 ) (bool, error) {
 	logger := log.FromContext(ctx)
-	equal, diff := semanticallyClusterConfig(clusterConfig, oldClusterConfig)
+	equal, diff := clusterConfigSemanticallyEqual(clusterConfig, oldClusterConfig)
 	if !equal {
 		logger.Info("ClusterConfig changed", "diff", diff)
 	}

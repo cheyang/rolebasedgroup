@@ -389,7 +389,7 @@ func TestConfigBuilder_GetRoleNames(t *testing.T) {
 	}
 }
 
-func Test_semanticallyClusterConfig(t *testing.T) {
+func Test_clusterConfigSemanticallyEqual(t *testing.T) {
 	defaultReplicas := int32(3)
 	defaultStartIndex := int32(0)
 	defaultLwsWorkers := int32(2)
@@ -565,27 +565,27 @@ func Test_semanticallyClusterConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotEqual, gotDiff := semanticallyClusterConfig(tt.old, tt.new)
+			gotEqual, gotDiff := clusterConfigSemanticallyEqual(tt.old, tt.new)
 
 			if gotEqual != tt.wantEqual {
-				t.Errorf("semanticallyClusterConfig() equal = %v, want %v", gotEqual, tt.wantEqual)
+				t.Errorf("clusterConfigSemanticallyEqual() equal = %v, want %v", gotEqual, tt.wantEqual)
 			}
 
 			if !tt.wantEqual {
 				// If we expect them to be different, ensure a diff message was provided
 				if gotDiff == "" {
-					t.Errorf("semanticallyClusterConfig() diff = %q, want non-empty diff message", gotDiff)
+					t.Errorf("clusterConfigSemanticallyEqual() diff = %q, want non-empty diff message", gotDiff)
 				}
 				// If a specific diff message was expected, check it (though cmp diff strings can be fragile)
 				// For tests where diff content varies, just checking non-empty is often sufficient
 				// If you add specific wantDiff strings for stable cases, uncomment below:
 				// if tt.wantDiff != "" && gotDiff != tt.wantDiff {
-				//     t.Errorf("semanticallyClusterConfig() diff = %q, want %q", gotDiff, tt.wantDiff)
+				//     t.Errorf("clusterConfigSemanticallyEqual() diff = %q, want %q", gotDiff, tt.wantDiff)
 				// }
 			} else {
 				// If we expect them to be equal, diff should be empty
 				if gotDiff != "" {
-					t.Errorf("semanticallyClusterConfig() diff = %q, want empty diff message", gotDiff)
+					t.Errorf("clusterConfigSemanticallyEqual() diff = %q, want empty diff message", gotDiff)
 				}
 			}
 		})
@@ -748,10 +748,10 @@ func TestConfigBuilder_ToClusterConfig(t *testing.T) {
 
 			gotConfig := builder.ToClusterConfig()
 
-			// Use the new semanticallyClusterConfig for comparison
-			equal, diff := semanticallyClusterConfig(tt.wantConfig, gotConfig)
+			// Use the new clusterConfigSemanticallyEqual for comparison
+			equal, diff := clusterConfigSemanticallyEqual(tt.wantConfig, gotConfig)
 			if !equal {
-				// Provide a detailed diff using go-cmp if available, or just the message from semanticallyClusterConfig
+				// Provide a detailed diff using go-cmp if available, or just the message from clusterConfigSemanticallyEqual
 				t.Errorf("ConfigBuilder.ToClusterConfig() = mismatch (-want +got):\n%s", diff)
 				// Alternative using cmp.Diff directly for potentially more detail (uncomment if needed):
 				// detailedDiff := cmp.Diff(tt.wantConfig, gotConfig, cmpopts.EquateEmpty())

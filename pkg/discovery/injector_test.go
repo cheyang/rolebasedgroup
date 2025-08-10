@@ -382,6 +382,6 @@ func TestInjectSidecar(t *testing.T) {
 	}
 }
 
-func TestDefaultInjector_isClusterConfigChanged(t *testing.T) {
+func TestDefaultInjector_hasClusterConfigChanged(t *testing.T) {
 
 }
