@@ -65,7 +65,8 @@ func (i *DefaultInjector) shouldUpdateConfigMap(
 	if data := currentCM.Data[configKey]; data != "" {
 		oldClusterConfig = &ClusterConfig{}
 		if err = yaml.Unmarshal([]byte(data), oldClusterConfig); err != nil {
-			oldClusterConfig = nil // 反序列化失败算空
+			oldClusterConfig = nil
+			logger.Info("Failed to unmarshal old cluster config", "error", err)
 		}
 	}
 

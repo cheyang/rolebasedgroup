@@ -8,8 +8,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	workloadsv1alpha "sigs.k8s.io/rbgs/api/workloads/v1alpha1"
+	workloadsv1alpha1 "sigs.k8s.io/rbgs/api/workloads/v1alpha1"
 )
 
 func TestInjectSidecar(t *testing.T) {
@@ -211,4 +213,42 @@ func TestInjectSidecar(t *testing.T) {
 
 func TestDefaultInjector_hasClusterConfigChanged(t *testing.T) {
 
+}
+
+func TestDefaultInjector_shouldUpdateConfigMap(t *testing.T) {
+	type fields struct {
+		scheme *runtime.Scheme
+		client client.Client
+	}
+	type args struct {
+		ctx           context.Context
+		rbg           *workloadsv1alpha1.RoleBasedGroup
+		role          *workloadsv1alpha1.RoleSpec
+		clusterConfig *ClusterConfig
+	}
+	tests := []struct {
+		name           string
+		fields         fields
+		args           args
+		wantNeedUpdate bool
+		wantErr        bool
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			i := &DefaultInjector{
+				scheme: tt.fields.scheme,
+				client: tt.fields.client,
+			}
+			gotNeedUpdate, err := i.shouldUpdateConfigMap(tt.args.ctx, tt.args.rbg, tt.args.role, tt.args.clusterConfig)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("DefaultInjector.shouldUpdateConfigMap() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if gotNeedUpdate != tt.wantNeedUpdate {
+				t.Errorf("DefaultInjector.shouldUpdateConfigMap() = %v, want %v", gotNeedUpdate, tt.wantNeedUpdate)
+			}
+		})
+	}
 }
